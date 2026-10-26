@@ -1,5 +1,4 @@
 import { User } from '../models/User.js';
-import { RefreshToken } from '../models/RefreshToken.js';
 import { sendVerificationEmail } from '../utils/email.js';
 import {
   signAccessToken,
@@ -23,13 +22,15 @@ async function issueTokens(res, user) {
   const accessToken = signAccessToken(user);
   const { token, hash, expiresAt } = generateRefreshToken();
 
-  await RefreshToken.create({ tokenHash: hash, user: user._id, expiresAt });
+  user.refreshTokenHash = hash;
+  user.refreshTokenExpiresAt = expiresAt;
+  await user.save();
+
   setRefreshCookie(res, token);
 
   return accessToken;
 }
 
-// POST /api/auth/register
 export async function register(req, res) {
   const { name, email, password } = req.body || {};
 
@@ -65,7 +66,6 @@ export async function register(req, res) {
   });
 }
 
-// GET /api/auth/verify-email/:token
 export async function verifyEmail(req, res) {
   const user = await User.findOne({
     verificationToken: req.params.token,
@@ -84,7 +84,6 @@ export async function verifyEmail(req, res) {
   res.json({ message: 'Email verified. You can now log in.' });
 }
 
-// POST /api/auth/login
 export async function login(req, res) {
   const { email, password } = req.body || {};
 
@@ -106,43 +105,55 @@ export async function login(req, res) {
   res.json({ accessToken, user: user.toSafeJSON() });
 }
 
-// POST /api/auth/refresh
 export async function refresh(req, res) {
   const token = req.cookies?.refreshToken;
   if (!token) {
     return res.status(401).json({ message: 'No refresh token' });
   }
 
-  const stored = await RefreshToken.findOne({ tokenHash: hashToken(token) });
-  if (!stored || stored.revokedAt || stored.expiresAt < new Date()) {
+  const tokenHash = hashToken(token);
+  const user = await User.findOne({ refreshTokenHash: tokenHash }).select(
+    '+refreshTokenHash +refreshTokenExpiresAt'
+  );
+
+  if (!user || !user.refreshTokenHash || !user.refreshTokenExpiresAt) {
     return res.status(401).json({ message: 'Invalid refresh token' });
   }
 
-  stored.revokedAt = new Date();
-  await stored.save();
-
-  const user = await User.findById(stored.user);
-  if (!user) {
+  if (user.refreshTokenExpiresAt < new Date()) {
+    user.refreshTokenHash = undefined;
+    user.refreshTokenExpiresAt = undefined;
+    await user.save();
     return res.status(401).json({ message: 'Invalid refresh token' });
   }
+
+  user.refreshTokenHash = undefined;
+  user.refreshTokenExpiresAt = undefined;
+  await user.save();
 
   const accessToken = await issueTokens(res, user);
 
   res.json({ accessToken });
 }
 
-// POST /api/auth/logout
 export async function logout(req, res) {
   const token = req.cookies?.refreshToken;
   if (token) {
-    await RefreshToken.updateOne({ tokenHash: hashToken(token) }, { revokedAt: new Date() });
+    const tokenHash = hashToken(token);
+    const user = await User.findOne({ refreshTokenHash: tokenHash }).select(
+      '+refreshTokenHash +refreshTokenExpiresAt'
+    );
+    if (user) {
+      user.refreshTokenHash = undefined;
+      user.refreshTokenExpiresAt = undefined;
+      await user.save();
+    }
   }
 
   res.clearCookie('refreshToken', { path: '/api/auth' });
   res.json({ message: 'Logged out' });
 }
 
-// GET /api/auth/me
 export async function getMe(req, res) {
   const user = await User.findById(req.userId);
   if (!user) {

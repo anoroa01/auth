@@ -9,6 +9,8 @@ const userSchema = new mongoose.Schema(
     isVerified: { type: Boolean, default: false },
     verificationToken: { type: String, select: false },
     verificationExpires: { type: Date, select: false },
+    refreshTokenHash: { type: String, select: false },
+    refreshTokenExpiresAt: { type: Date, select: false },
   },
   { timestamps: true }
 );

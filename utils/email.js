@@ -12,7 +12,7 @@ export async function sendVerificationEmail(email, name, token) {
   const url = `${config.clientUrl}/verify-email/${token}`;
 
   if (!config.smtp.host) {
-    // No SMTP configured (local dev) — just print the link
+    // local dev has no SMTP, print the link instead
     console.log(`📧 [dev] Verification link for ${email}: ${url}`);
     return;
   }

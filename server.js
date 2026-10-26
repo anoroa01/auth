@@ -3,13 +3,23 @@ import cookieParser from 'cookie-parser';
 import mongoose from 'mongoose';
 import authRoutes from './routes/auth.js';
 import { config } from './config.js';
+import { requireAuth } from './middleware/auth.js';
 
 const app = express();
 
 app.use(express.json());
 app.use(cookieParser());
 
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
+const publicRoutes = ['/api/auth/register', '/api/auth/login'];
+
+app.use((req, res, next) => {
+  if (req.method === 'OPTIONS' || publicRoutes.includes(req.path)) {
+    return next();
+  }
+
+  return requireAuth(req, res, next);
+});
+
 app.use('/api/auth', authRoutes);
 
 app.use((req, res) => res.status(404).json({ message: 'Route not found' }));
